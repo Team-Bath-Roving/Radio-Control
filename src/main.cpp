@@ -1,8 +1,12 @@
+#include <Arduino.h>
+
 #include <Ewma.h>
 #include <EwmaT.h>
 #include <vector>
 
 #include <ServoInput.h>
+
+#include <Adafruit_TinyUSB.h>
 
 #define FILTERING 0.006
 #define DEFAULT_THRESHOLD 1.5
@@ -15,6 +19,8 @@ ServoInputPin<3> rawLeftX;
 ServoInputPin<4> rawLeftY;
 ServoInputPin<5> rawRightY;
 ServoInputPin<6> rawRightX;
+
+// Adafruit_USBD_CDC USBSer1;
 
 class channel {
 	Ewma filter;
@@ -72,9 +78,15 @@ void connect() {
 }
 
 void setup() {
+	// Serial.setStringDescriptor("RC Reciever");
+	// Serial.print(Serial.getInterfaceDescriptor()):
+
 	Serial.begin(115200);
+	TinyUSBDevice.setID(0x2E8A,0x000B);
+	TinyUSBDevice.setManufacturerDescriptor("Team Bath Roving");
+	TinyUSBDevice.setProductDescriptor("HKT6A-V2 RX");
 	delay(500);
-	Serial.println("INFO: Intialised");
+	Serial.println("INFO: Intialised, awaiting controller connection");
 }
 
 // void printChannel(String name, float angle) {
