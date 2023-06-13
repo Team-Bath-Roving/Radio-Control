@@ -1,5 +1,7 @@
 #include <Arduino.h>
 
+/* -------------------------------- Libraries ------------------------------- */
+
 #include <Ewma.h>
 #include <EwmaT.h>
 #include <vector>
@@ -8,10 +10,24 @@
 
 #include <Adafruit_TinyUSB.h>
 
-#define FILTERING 0.006
-#define DEFAULT_THRESHOLD 1.5
+/* --------------------------------- Headers -------------------------------- */
+
+#include "channel.h"
+#include "motor.h"
+
+/* -------------------------------- Settings -------------------------------- */
+
+#define MOTOR_SERIAL_TX 26
+#define MOTOR_SERIAL_RX 27
+
+#define MOTOR_SERIAL_BAUD 230400
+#define USB_SERIAL_BAUD 230400
 
 #define MAX_CHANGE_TIME 1000 // max time between changes on PWM inputs before controller considered disconnected
+
+/* --------------------------------- Objects -------------------------------- */
+
+SerialPIO motorSer(MOTOR_SERIAL_TX,MOTOR_SERIAL_RX);
 
 ServoInputPin<1> rawLeftDial;
 ServoInputPin<2> rawRightDial;
@@ -20,46 +36,12 @@ ServoInputPin<4> rawLeftY;
 ServoInputPin<5> rawRightY;
 ServoInputPin<6> rawRightX;
 
-// Adafruit_USBD_CDC USBSer1;
-
-class channel {
-	Ewma filter;
-	float previousValue;
-	float threshold;
-public:
-	String name;
-	bool change;
-	channel(String name, float threshold=DEFAULT_THRESHOLD) : name(name), filter(FILTERING), threshold(threshold) {};
-	void update(float angle) {
-		filter.filter(angle);
-	};
-	bool detectChange(float changeThreshold=-1,bool updateVal=true) {
-		if (changeThreshold==-1)
-			changeThreshold=threshold;
-		if (previousValue-filter.output>=changeThreshold || filter.output-previousValue>=changeThreshold) {
-			if (updateVal)
-				previousValue=filter.output;
-			change=true;
-		} else {
-			change=false;
-		}
-		return change;
-	};
-	void printAngle() {
-		Serial.print("\"");
-		Serial.print(name);
-		Serial.print("\"");
-		Serial.print(":");
-		Serial.print((uint8_t)filter.output);
-	};
-};
-
-channel LeftDial("LeftDial");
-channel RightDial("RightDial");
-channel LeftY("LeftY");
-channel LeftX("LeftX");
-channel RightY("RightY");
-channel RightX("RightX");
+channel LeftDial  ("LeftDial"  ,BRUSH      );
+channel RightDial ("RightDial" ,ARM        );
+channel LeftY     ("LeftY"     ,DRIVE      );
+channel LeftX     ("LeftX"     ,TURN       );
+channel RightY    ("RightY"    ,SCOOP_FRONT);
+channel RightX    ("RightX"    ,SCOOP_REAR );
 
 channel * channels [6] = {
 	& LeftDial,
@@ -70,6 +52,48 @@ channel * channels [6] = {
 	& RightX
 };
 
+// Payload
+Motor Brush     (motorSer,0,false);
+Motor Arm       (motorSer,1,false);
+Motor ScoopFront(motorSer,2,false);
+Motor ScoopRear (motorSer,3,false);
+// Propulsion
+Motor FrontLeft  (motorSer,4,true );
+Motor FrontRight (motorSer,5,true );
+Motor RearLeft   (motorSer,6,true );
+Motor RearRight  (motorSer,7,false);
+
+Motor * motors [8] = {
+	&Brush,     
+	&Arm,       
+	&ScoopFront,
+	&ScoopRear, 
+	&FrontLeft, 
+	&FrontRight,
+	&RearLeft,  
+	&RearRight 
+};
+
+/* -------------------------------- Variables ------------------------------- */
+
+int driveSpeed=0;
+int turnSpeed=0;
+
+bool connected = false;
+unsigned long prevChangeTime=0; // time of last change to PWM inputs
+unsigned long printTime=0;
+unsigned long sampleTime=0;
+
+/* -------------------------------- Functions ------------------------------- */
+
+void drive() {
+	int left=driveSpeed-turnSpeed;
+	int right=driveSpeed+turnSpeed;
+	FrontLeft.setDuty(left);
+	FrontRight.setDuty(right);
+	RearLeft.setDuty(left);
+	RearRight.setDuty(right);
+}
 // Pair the device with the controller
 void connect() {
 	digitalWrite(0,LOW);
@@ -77,11 +101,11 @@ void connect() {
 	digitalWrite(0,HIGH);
 }
 
-void setup() {
-	// Serial.setStringDescriptor("RC Reciever");
-	// Serial.print(Serial.getInterfaceDescriptor()):
+/* ---------------------------------- Setup --------------------------------- */
 
-	Serial.begin(115200);
+void setup() {
+	Serial.begin(USB_SERIAL_BAUD);
+	motorSer.begin(MOTOR_SERIAL_BAUD); // gp27 RX
 	TinyUSBDevice.setID(0x2E8A,0x000B);
 	TinyUSBDevice.setManufacturerDescriptor("Team Bath Roving");
 	TinyUSBDevice.setProductDescriptor("HKT6A-V2 RX");
@@ -89,21 +113,13 @@ void setup() {
 	Serial.println("INFO: Intialised, awaiting controller connection");
 }
 
-// void printChannel(String name, float angle) {
-//     Serial.print(name);
-//     Serial.print(":");
-//     Serial.print(angle);
-//     Serial.print(",");
-//   };
+/* -------------------------------- Main Loop ------------------------------- */
 
-
-bool connected = false;
-unsigned long prevChangeTime=0; // time of last change to PWM inputs
-unsigned long printTime=0;
-unsigned long sampleTime=0;
 void loop() {
 	if (micros()-sampleTime>500) {
 		sampleTime=micros();
+
+		// Check for updates
 		channels[0]->update(rawLeftDial.getAngle());
 		channels[1]->update(rawRightDial.getAngle());
 		channels[2]->update(rawLeftX.getAngle());
@@ -111,6 +127,7 @@ void loop() {
 		channels[4]->update(rawRightY.getAngle());
 		channels[5]->update(rawRightX.getAngle());
 
+		// Measure sizes of changes to see if significant
 		uint8_t changes=0;
 		uint8_t smallChanges=0;
 		for (auto chan : channels) {
@@ -123,6 +140,7 @@ void loop() {
 				changes++;
 			}
 		}
+
 		// Only set state to connected if multiple channels have changed
 		if (smallChanges>3) {
 			prevChangeTime=millis();
@@ -131,10 +149,16 @@ void loop() {
 				Serial.println("INFO: Radio Control Established");
 			}  
 		}
+		// Check if disconnected, if so disable motors
 		if (millis()-prevChangeTime>MAX_CHANGE_TIME) {
 			if (connected) {
 				connected=false;
 				Serial.println("WARN: Radio Control Lost");
+
+				// Disable motors
+				for (auto m : motors) {
+					m->setDuty(0);
+				}
 			} 
 		}
 
@@ -147,10 +171,32 @@ void loop() {
 			for (auto chan : channels) {
 				if (chan->change) {
 					printedChanges++;
-					chan->printAngle();
+					chan->printRawAngle();
 					if (printedChanges!=changes)
 						Serial.print(",");
 					// Serial.print(" ");
+					switch(chan->action) {
+						case DRIVE:
+							driveSpeed=chan->getOutput();
+							drive();
+							break;
+						case TURN:
+							turnSpeed=chan->getOutput();
+							drive();
+							break;
+						case BRUSH:
+							Brush.setDuty(chan->getOutput());
+							break;
+						case ARM:
+							Arm.setDuty(chan->getOutput());
+							break;
+						case SCOOP_FRONT:
+							ScoopFront.setDuty(chan->getOutput());
+							break;
+						case SCOOP_REAR:
+							ScoopRear.setDuty(chan->getOutput());
+							break;
+					}
 				}
 			}
 			Serial.println("}");
