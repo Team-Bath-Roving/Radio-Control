@@ -20,14 +20,19 @@
 #define MOTOR_SERIAL_TX 26
 #define MOTOR_SERIAL_RX 27
 
-#define RED 18
-#define GREEN 19
-#define BLUE 20
+#define RED_PIN 18
+#define GREEN_PIN 19
+#define BLUE_PIN 20
 
 #define MOTOR_SERIAL_BAUD 230400
 #define USB_SERIAL_BAUD 230400
 
 #define MAX_CHANGE_TIME 1000 // max time between changes on PWM inputs before controller considered disconnected
+
+/* ---------------------------------- Enums --------------------------------- */
+
+enum Mode {DRIVE,PAYLOAD};
+enum Colour {RED,GREEN,BLUE,YELLOW,CYAN,MAGENTA,WHITE,BLACK};
 
 /* --------------------------------- Objects -------------------------------- */
 
@@ -88,7 +93,6 @@ unsigned long prevChangeTime=0; // time of last change to PWM inputs
 unsigned long printTime=0;
 unsigned long sampleTime=0;
 
-enum Mode {DRIVE,PAYLOAD};
 Mode mode=DRIVE;
 Mode prevMode=DRIVE;
 bool enabled=false;
@@ -115,12 +119,38 @@ void stop() {
 	}
 }
 
+void setRGB(bool r, bool g, bool b) {
+	digitalWrite(RED,r);
+	digitalWrite(GREEN,g);
+	digitalWrite(BLUE,b);
+}
+void indicator(Colour colour) {
+	switch (colour) {
+		case RED:
+			setRGB(1,0,0); break;
+		case GREEN:
+			setRGB(0,1,0); break;
+		case BLUE:
+			setRGB(0,0,1); break;
+		case CYAN:
+			setRGB(0,1,1); break;
+		case MAGENTA:
+			setRGB(1,0,1); break;
+		case YELLOW:
+			setRGB(1,1,0); break;
+		case WHITE:
+			setRGB(1,1,1); break;
+		case BLACK:
+			setRGB(0,0,0); break;
+	}
+}
+
 /* ---------------------------------- Setup --------------------------------- */
 
 void setup() {
-	pinMode(RED,INPUT);
-	pinMode(GREEN,INPUT);
-	pinMode(BLUE,INPUT);
+	pinMode(RED_PIN,INPUT);
+	pinMode(GREEN_PIN,INPUT);
+	pinMode(BLUE_PIN,INPUT);
 
 	Serial.begin(USB_SERIAL_BAUD);
 	motorSer.begin(MOTOR_SERIAL_BAUD); // gp27 RX
@@ -140,19 +170,14 @@ void loop() {
 		// Set status LEDs
 		if (connected) {
 			if (enabled) {
-				digitalWrite(RED,LOW);
-				digitalWrite(GREEN,HIGH);
-				digitalWrite(BLUE,LOW);
-			} else {
-				digitalWrite(RED,LOW);
-				digitalWrite(GREEN,LOW);
-				digitalWrite(BLUE,HIGH);
-			}
-		} else {
-			digitalWrite(RED,HIGH);
-			digitalWrite(GREEN,LOW);
-			digitalWrite(BLUE,LOW);
-		}
+				if (mode==DRIVE)
+					indicator(GREEN);
+				else
+					indicator(YELLOW);
+			} else
+				indicator(BLUE);
+		} else
+			indicator(RED);
 
 		// Check for updates
 		channels[0]->update(rawLeftDial.getAngle());
