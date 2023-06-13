@@ -36,12 +36,12 @@ ServoInputPin<4> rawLeftY;
 ServoInputPin<5> rawRightY;
 ServoInputPin<6> rawRightX;
 
-channel LeftDial  ("LeftDial"  ,BRUSH      );
-channel RightDial ("RightDial" ,ARM        );
-channel LeftY     ("LeftY"     ,DRIVE      );
-channel LeftX     ("LeftX"     ,TURN       );
-channel RightY    ("RightY"    ,SCOOP_FRONT);
-channel RightX    ("RightX"    ,SCOOP_REAR );
+channel LeftDial  ("LeftDial"  ,MODE           );
+channel RightDial ("RightDial" ,ENABLE         );
+channel LeftY     ("LeftY"     ,DRIVE_OR_ARM  );
+channel LeftX     ("LeftX"     ,TURN_OR_BRUSH );
+channel RightY    ("RightY"    ,SCOOP_FRONT    );
+channel RightX    ("RightX"    ,SCOOP_REAR     );
 
 channel * channels [6] = {
 	& LeftDial,
@@ -84,6 +84,11 @@ unsigned long prevChangeTime=0; // time of last change to PWM inputs
 unsigned long printTime=0;
 unsigned long sampleTime=0;
 
+enum Mode {DRIVE,PAYLOAD};
+Mode mode=DRIVE;
+Mode prevMode=DRIVE;
+bool enabled=false;
+
 /* -------------------------------- Functions ------------------------------- */
 
 void drive() {
@@ -99,6 +104,11 @@ void connect() {
 	digitalWrite(0,LOW);
 	delay(5000);
 	digitalWrite(0,HIGH);
+}
+void stop() {
+	for (auto m : motors) {
+		m->setDuty(0);
+	}
 }
 
 /* ---------------------------------- Setup --------------------------------- */
@@ -156,9 +166,7 @@ void loop() {
 				Serial.println("WARN: Radio Control Lost");
 
 				// Disable motors
-				for (auto m : motors) {
-					m->setDuty(0);
-				}
+				stop();
 			} 
 		}
 
@@ -176,19 +184,56 @@ void loop() {
 						Serial.print(",");
 					// Serial.print(" ");
 					switch(chan->action) {
-						case DRIVE:
-							driveSpeed=chan->getOutput();
-							drive();
+						case MODE:
+							prevMode=mode;
+							// set new mode
+							if (chan->getOutput()>0)
+								mode=PAYLOAD;
+							else
+								mode=DRIVE;
+							// check if changed
+							if (prevMode!=mode) {
+								// if previously in drive mode, stop the wheels
+								if (prevMode==DRIVE) {
+									driveSpeed=0;
+									turnSpeed=0;
+									drive();
+								}
+								// if previously in payload mode, stop the brush and arm
+								else {
+									Brush.setDuty(0);
+									Arm.setDuty(0);
+								}
+							}
+							break;					
+						case ENABLE:
+							if (chan->getOutput()>0) {
+								if (!enabled)
+									enabled=true;
+							} else {
+								if (enabled) {
+									enabled=false;
+									stop();
+								}
+							}
 							break;
-						case TURN:
-							turnSpeed=chan->getOutput();
-							drive();
+						case DRIVE_OR_ARM:
+							if (mode==DRIVE) {
+								driveSpeed=chan->getOutput();
+								drive();
+							}
+							else {
+								Arm.setDuty(chan->getOutput());
+							}
 							break;
-						case BRUSH:
-							Brush.setDuty(chan->getOutput());
-							break;
-						case ARM:
-							Arm.setDuty(chan->getOutput());
+						case TURN_OR_BRUSH:
+							if (mode==DRIVE){
+								turnSpeed=chan->getOutput();
+								drive();
+							}
+							else {
+								Brush.setDuty(chan->getOutput());
+							}
 							break;
 						case SCOOP_FRONT:
 							ScoopFront.setDuty(chan->getOutput());
