@@ -237,10 +237,14 @@ void loop() {
 						case MODE:
 							prevMode=mode;
 							// set new mode
-							if (chan->getOutput()>0)
+							if (chan->getOutput()>0) {
 								mode=PAYLOAD;
-							else
+								Serial.println("INFO: Switched to Payload mode");
+							}
+							else {
 								mode=DRIVE;
+								Serial.println("INFO: Switched to Drive mode");
+							}
 							// check if changed
 							if (prevMode!=mode) {
 								// if previously in drive mode, stop the wheels
@@ -258,12 +262,15 @@ void loop() {
 							break;					
 						case ENABLE:
 							if (chan->getOutput()>0) {
-								if (!enabled)
+								if (!enabled) {
 									enabled=true;
+									Serial.println("INFO: Enabled motors");
+								}
 							} else {
 								if (enabled) {
 									enabled=false;
 									stop();
+									Serial.println("INFO: Disabled motors");
 								}
 							}
 							break;
