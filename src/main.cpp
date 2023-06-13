@@ -20,6 +20,10 @@
 #define MOTOR_SERIAL_TX 26
 #define MOTOR_SERIAL_RX 27
 
+#define RED 18
+#define GREEN 19
+#define BLUE 20
+
 #define MOTOR_SERIAL_BAUD 230400
 #define USB_SERIAL_BAUD 230400
 
@@ -114,6 +118,10 @@ void stop() {
 /* ---------------------------------- Setup --------------------------------- */
 
 void setup() {
+	pinMode(RED,INPUT);
+	pinMode(GREEN,INPUT);
+	pinMode(BLUE,INPUT);
+
 	Serial.begin(USB_SERIAL_BAUD);
 	motorSer.begin(MOTOR_SERIAL_BAUD); // gp27 RX
 	TinyUSBDevice.setID(0x2E8A,0x000B);
@@ -128,6 +136,23 @@ void setup() {
 void loop() {
 	if (micros()-sampleTime>500) {
 		sampleTime=micros();
+
+		// Set status LEDs
+		if (connected) {
+			if (enabled) {
+				digitalWrite(RED,LOW);
+				digitalWrite(GREEN,HIGH);
+				digitalWrite(BLUE,LOW);
+			} else {
+				digitalWrite(RED,LOW);
+				digitalWrite(GREEN,LOW);
+				digitalWrite(BLUE,HIGH);
+			}
+		} else {
+			digitalWrite(RED,HIGH);
+			digitalWrite(GREEN,LOW);
+			digitalWrite(BLUE,LOW);
+		}
 
 		// Check for updates
 		channels[0]->update(rawLeftDial.getAngle());
